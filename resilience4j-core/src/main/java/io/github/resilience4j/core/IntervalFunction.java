@@ -11,6 +11,11 @@ import static java.util.Objects.requireNonNull;
  * An IntervalFunction which can be used to calculate the wait interval. The input parameter of the
  * function is the number of attempts (attempt), the output parameter the wait interval in
  * milliseconds. The attempt parameter starts at 1 and increases with every further attempt.
+ *
+ *<p>
+ * IntervalFunction 仅基于重试次数计算间隔时间，无法感知异常类型
+ *</p>
+ *
  */
 @FunctionalInterface
 public interface IntervalFunction extends Function<Integer, Long> {
