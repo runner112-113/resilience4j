@@ -48,9 +48,12 @@ import io.github.resilience4j.ratelimiter.event.RateLimiterOnSuccessEvent;
  */
 public class AtomicRateLimiter implements RateLimiter {
 
+    // RateLimiter创建时间，基准时间
     private final long nanoTimeStart;
     private final String name;
+    // 等待的线程数
     private final AtomicInteger waitingThreads;
+    // the statue of the last {@link AtomicRateLimiter#acquirePermission()} call
     private final AtomicReference<State> state;
     private final Map<String, String> tags;
     private final RateLimiterEventProcessor eventProcessor;
@@ -117,6 +120,7 @@ public class AtomicRateLimiter implements RateLimiter {
     @Override
     public boolean acquirePermission(final int permits) {
         long timeoutInNanos = state.get().config.getTimeoutDuration().toNanos();
+        // 状态转换
         State modifiedState = updateStateWithBackOff(permits, timeoutInNanos);
         boolean result = waitForPermissionIfNecessary(timeoutInNanos, modifiedState.nanosToWait);
         publishRateLimiterAcquisitionEvent(result, permits);
@@ -124,6 +128,7 @@ public class AtomicRateLimiter implements RateLimiter {
     }
 
     /**
+     * 预定permission
      * {@inheritDoc}
      */
     @Override
@@ -216,16 +221,22 @@ public class AtomicRateLimiter implements RateLimiter {
      */
     private State calculateNextState(final int permits, final long timeoutInNanos,
                                      final State activeState) {
+        // 一个周期的nanos
         long cyclePeriodInNanos = activeState.config.getLimitRefreshPeriod().toNanos();
+        // 一个周期的permits
         int permissionsPerCycle = activeState.config.getLimitForPeriod();
 
+        // 当前相对的Nanos
         long currentNanos = currentNanoTime();
+        // 当前所处的周期
         long currentCycle = currentNanos / cyclePeriodInNanos;
 
         long nextCycle = activeState.activeCycle;
         int nextPermissions = activeState.activePermissions;
         if (nextCycle != currentCycle) {
+            // 超过的周期
             long elapsedCycles = currentCycle - nextCycle;
+            // 超过的这段时间收集的permissions
             long accumulatedPermissions = elapsedCycles * permissionsPerCycle;
             nextCycle = currentCycle;
             nextPermissions = (int) min(nextPermissions + accumulatedPermissions,
@@ -255,13 +266,17 @@ public class AtomicRateLimiter implements RateLimiter {
     private long nanosToWaitForPermission(final int permits, final long cyclePeriodInNanos,
                                           final int permissionsPerCycle,
                                           final int availablePermissions, final long currentNanos, final long currentCycle) {
+        // 有充足的permission 直接返回
         if (availablePermissions >= permits) {
             return 0L;
         }
         long nextCycleTimeInNanos = (currentCycle + 1) * cyclePeriodInNanos;
+        // 距离下个周期的时间（当前周期剩下的时间）
         long nanosToNextCycle = nextCycleTimeInNanos - currentNanos;
+        // if timeoutTime > waitTime that can reserve permission, can be negative if some permissions have been reserved
         int permissionsAtTheStartOfNextCycle = availablePermissions + permissionsPerCycle;
         int fullCyclesToWait = divCeil(-(permissionsAtTheStartOfNextCycle - permits), permissionsPerCycle);
+        // 需要等待的周期+当前周期剩下的时间
         return (fullCyclesToWait * cyclePeriodInNanos) + nanosToNextCycle;
     }
 
@@ -291,6 +306,7 @@ public class AtomicRateLimiter implements RateLimiter {
     private State reservePermissions(final RateLimiterConfig config, final int permits,
                                      final long timeoutInNanos,
                                      final long cycle, final int permissions, final long nanosToWait) {
+        // timeoutInNanos >= nanosToWait --> can reserved
         boolean canAcquireInTime = timeoutInNanos >= nanosToWait;
         int permissionsWithReservation = permissions;
         if (canAcquireInTime) {
